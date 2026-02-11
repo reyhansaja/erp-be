@@ -1,0 +1,78 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  permissions Json?     // Flexible permissions structure
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model User {
+  id            Int       @id @default(autoincrement())
+  username      String    @unique
+  password      String
+  roleId        Int
+  role          Role      @relation(fields: [roleId], references: [id])
+  createdTasks  Subtask[] // Tasks created by this user
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Prospect {
+  no_project    String   @id // e.g., IMX.2026-X-001
+  name_project  String
+  client_name   String
+  contact_name  String
+  status        ProspectStatus @default(LEAD)
+  project       Project?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+enum ProspectStatus {
+  LEAD
+  PROPOSAL
+  WON
+  LOSS
+  HOLD
+  REAL_LOSS
+}
+
+model Project {
+  id            Int       @id @default(autoincrement())
+  prospectId    String    @unique
+  prospect      Prospect  @relation(fields: [prospectId], references: [no_project])
+  is_done       Boolean   @default(false)
+  subtasks      Subtask[]
+  order         Int       @default(0)
+  link          String?   // Main project link
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Subtask {
+  id          Int      @id @default(autoincrement())
+  projectId   Int
+  project     Project  @relation(fields: [projectId], references: [id])
+  name        String
+  deadline    DateTime
+  progress    Int      @default(0) // 0-100
+  createdById Int
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  description String?
+  link        String?  // Optional link
+  documents   Json?    // Array of document URLs/Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
