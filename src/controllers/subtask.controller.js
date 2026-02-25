@@ -3,19 +3,29 @@ const prisma = require('../utils/prisma');
 // Add Subtask
 const createSubtask = async (req, res) => {
     try {
-        const { projectId, name, deadline, description, link } = req.body;
+        const { projectId, prospectId, name, deadline, description, link } = req.body;
 
-        // Check if project exists
-        const project = await prisma.project.findUnique({ where: { id: parseInt(projectId) } });
-        if (!project) return res.status(404).json({ message: 'Project not found' });
+        let finalProspectId = prospectId;
 
-        if (project.is_done) {
-            return res.status(400).json({ message: 'Cannot add task to a completed project' });
+        if (projectId) {
+            const project = await prisma.project.findUnique({ where: { id: parseInt(projectId) } });
+            if (!project) return res.status(404).json({ message: 'Project not found' });
+
+            if (project.is_done) {
+                return res.status(400).json({ message: 'Cannot add task to a completed project' });
+            }
+            finalProspectId = project.prospectId;
+        } else if (prospectId) {
+            const prospect = await prisma.prospect.findUnique({ where: { no_project: prospectId } });
+            if (!prospect) return res.status(404).json({ message: 'Prospect not found' });
+        } else {
+            return res.status(400).json({ message: 'projectId or prospectId is required' });
         }
 
         const subtask = await prisma.subtask.create({
             data: {
-                projectId: parseInt(projectId),
+                projectId: projectId ? parseInt(projectId) : null,
+                prospectId: finalProspectId,
                 name,
                 deadline: new Date(deadline), // Ensure ISO string from frontend
                 description,
@@ -23,9 +33,6 @@ const createSubtask = async (req, res) => {
                 createdById: req.userId,
             },
         });
-
-        // Update project done status (re-evaluate)
-        await evaluateProjectStatus(parseInt(projectId));
 
         res.status(201).json(subtask);
     } catch (error) {
@@ -55,9 +62,6 @@ const updateSubtask = async (req, res) => {
             },
         });
 
-        // Evaluate Project Status
-        await evaluateProjectStatus(subtask.projectId);
-
         res.json(updatedSubtask);
     } catch (error) {
         console.error(error);
@@ -74,9 +78,6 @@ const deleteSubtask = async (req, res) => {
 
         await prisma.subtask.delete({ where: { id: parseInt(id) } });
 
-        // Evaluate Project Status
-        await evaluateProjectStatus(subtask.projectId);
-
         res.json({ message: 'Subtask deleted' });
     } catch (error) {
         console.error(error);
@@ -86,32 +87,35 @@ const deleteSubtask = async (req, res) => {
 
 // Helper: Check if all tasks are done -> Project Done
 const evaluateProjectStatus = async (projectId) => {
-    const project = await prisma.project.findUnique({
-        where: { id: projectId },
-        include: { subtasks: true },
-    });
+    // This function can still be used to trigger other side effects or 
+    // re-calculate read-only stats if necessary.
+    // However, as per new requirement, project.is_done is now MANUAL.
+    return;
+};
 
-    if (!project) return;
-
-    if (project.subtasks.length === 0) {
-        // No tasks = Not done? Or Done? Assume not done until tasks added and completed. 
-        // Or if manual completion is needed.
-        // User said: "saat main task di 100% kan progressnya maka main task dan subtasknya dipindah ke project done"
-        // I will auto-set to true if progress is 100%.
-        return;
-    }
-
-    const totalProgress = project.subtasks.reduce((sum, t) => sum + t.progress, 0);
-    const avgProgress = Math.round(totalProgress / project.subtasks.length);
-
-    const isDone = avgProgress === 100;
-
-    if (project.is_done !== isDone) {
-        await prisma.project.update({
-            where: { id: projectId },
-            data: { is_done: isDone },
+// Get Subtask by ID
+const getSubtaskById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const subtask = await prisma.subtask.findUnique({
+            where: { id: parseInt(id) },
+            include: {
+                createdBy: {
+                    select: {
+                        id: true,
+                        username: true
+                    }
+                }
+            }
         });
+
+        if (!subtask) return res.status(404).json({ message: 'Subtask not found' });
+
+        res.json(subtask);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error fetching subtask' });
     }
 };
 
-module.exports = { createSubtask, updateSubtask, deleteSubtask };
+module.exports = { createSubtask, updateSubtask, deleteSubtask, getSubtaskById };

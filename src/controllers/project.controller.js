@@ -3,12 +3,22 @@ const prisma = require('../utils/prisma');
 // Get All Projects
 const getProjects = async (req, res) => {
     try {
-        const { is_done } = req.query;
+        const { is_done, search } = req.query;
 
         // Build filter
         let where = {};
         if (is_done !== undefined) {
             where.is_done = is_done === 'true';
+        }
+
+        if (search) {
+            where.prospect = {
+                OR: [
+                    { name_project: { contains: search, mode: 'insensitive' } },
+                    { no_project: { contains: search, mode: 'insensitive' } },
+                    { client_name: { contains: search, mode: 'insensitive' } },
+                ]
+            };
         }
 
         const projects = await prisma.project.findMany({
@@ -104,14 +114,17 @@ const reorderProjects = async (req, res) => {
 const updateProject = async (req, res) => {
     try {
         const { id } = req.params;
-        const { link } = req.body;
+        const { link, is_done } = req.body;
 
         const project = await prisma.project.findUnique({ where: { id: parseInt(id) } });
         if (!project) return res.status(404).json({ message: 'Project not found' });
 
         const updatedProject = await prisma.project.update({
             where: { id: parseInt(id) },
-            data: { link },
+            data: {
+                link,
+                is_done: is_done !== undefined ? is_done : undefined
+            },
         });
 
         res.json(updatedProject);

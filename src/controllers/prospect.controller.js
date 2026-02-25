@@ -77,44 +77,71 @@ const updateProspect = async (req, res) => {
         // Check transition to WON or if already WON but missing project
         // Check transition to WON or REAL_LOSS
         if (prospect.status === 'WON' || prospect.status === 'REAL_LOSS') {
-            console.log(`Prospect ${id} is ${prospect.status}. Checking for existing project...`);
-
             const isDone = prospect.status === 'REAL_LOSS';
 
             // Create Project if not exists
-            const existingProject = await prisma.project.findUnique({ where: { prospectId: id } });
+            let project = await prisma.project.findUnique({ where: { prospectId: id } });
 
-            if (!existingProject) {
-                console.log(`Creating new project for prospect ${id}`);
+            if (!project) {
                 try {
-                    await prisma.project.create({
+                    project = await prisma.project.create({
                         data: {
                             prospectId: id,
                             is_done: isDone
                         },
                     });
-                    console.log(`Project created for prospect ${id}`);
                 } catch (createError) {
                     console.error(`Failed to create project for prospect ${id}:`, createError);
                 }
             } else {
-                console.log(`Project already exists for prospect ${id}. Updating status...`);
                 // Ensure is_done matches the status
-                if (isDone && !existingProject.is_done) {
-                    await prisma.project.update({
-                        where: { id: existingProject.id },
+                if (isDone && !project.is_done) {
+                    project = await prisma.project.update({
+                        where: { id: project.id },
                         data: { is_done: true }
                     });
                 }
             }
-        } else {
-            console.log(`Status is ${prospect.status}. No project creation needed.`);
+
+            // Sync subtasks to the project
+            if (project) {
+                await prisma.subtask.updateMany({
+                    where: { prospectId: id },
+                    data: { projectId: project.id }
+                });
+            }
         }
 
         res.json(prospect);
     } catch (error) {
         console.error("Update Prospect Error:", error);
         res.status(500).json({ message: error.message || 'Error updating prospect' });
+    }
+};
+
+// Get Single Prospect
+const getProspectById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const prospect = await prisma.prospect.findUnique({
+            where: { no_project: id },
+            include: {
+                project: true,
+                subtasks: {
+                    include: { createdBy: { select: { username: true } } },
+                    orderBy: { deadline: 'asc' }
+                }
+            },
+        });
+
+        if (!prospect) {
+            return res.status(404).json({ message: 'Prospect not found' });
+        }
+
+        res.json(prospect);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error fetching prospect' });
     }
 };
 
@@ -134,5 +161,6 @@ module.exports = {
     createProspect,
     getProspects,
     updateProspect,
-    deleteProspect
+    deleteProspect,
+    getProspectById
 };
