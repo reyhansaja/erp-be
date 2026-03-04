@@ -123,24 +123,36 @@ const updateProspect = async (req, res) => {
 const getProspectById = async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Prospect model in the current Prisma client does not have a
+        // `subtasks` relation, so we first load the prospect + project,
+        // then load subtasks via the project's id.
         const prospect = await prisma.prospect.findUnique({
             where: { no_project: id },
-            include: {
-                project: true,
-                subtasks: {
-                    include: { createdBy: { select: { username: true } } },
-                    orderBy: { deadline: 'asc' }
-                }
-            },
+            include: { project: true },
         });
 
         if (!prospect) {
             return res.status(404).json({ message: 'Prospect not found' });
         }
 
-        res.json(prospect);
+        let subtasks = [];
+        subtasks = await prisma.subtask.findMany({
+            where: {
+                OR: [
+                    prospect.project ? { projectId: prospect.project.id } : undefined,
+                    { prospectId: id }
+                ].filter(Boolean)
+            },
+            include: {
+                createdBy: { select: { username: true } },
+            },
+            orderBy: { deadline: 'asc' },
+        });
+
+        res.json({ ...prospect, subtasks });
     } catch (error) {
-        console.error(error);
+        console.error('Error fetching prospect by id:', error);
         res.status(500).json({ message: 'Error fetching prospect' });
     }
 };
@@ -149,11 +161,28 @@ const getProspectById = async (req, res) => {
 const deleteProspect = async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Check if prospect has an associated project
+        const project = await prisma.project.findUnique({ where: { prospectId: id } });
+
+        // Step 1: Delete all subtasks connected to this prospect directly
+        await prisma.subtask.deleteMany({ where: { prospectId: id } });
+
+        if (project) {
+            // Step 2: Delete subtasks connected to the project
+            await prisma.subtask.deleteMany({ where: { projectId: project.id } });
+
+            // Step 3: Delete the project
+            await prisma.project.delete({ where: { id: project.id } });
+        }
+
+        // Step 4: Finally, delete the prospect
         await prisma.prospect.delete({ where: { no_project: id } });
-        res.json({ message: 'Prospect deleted' });
+
+        res.json({ message: 'Prospect deleted successfully' });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Error deleting prospect' });
+        console.error("Error deleting prospect:", error);
+        res.status(500).json({ message: 'Error deleting prospect: ' + String(error.message || error) });
     }
 };
 

@@ -16,7 +16,10 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: ['http://localhost:5173', 'https://erp.portorey.my.id'],
+    credentials: true
+}));
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());

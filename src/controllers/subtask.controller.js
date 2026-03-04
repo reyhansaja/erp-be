@@ -5,39 +5,46 @@ const createSubtask = async (req, res) => {
     try {
         const { projectId, prospectId, name, deadline, description, link } = req.body;
 
-        let finalProspectId = prospectId;
+        if (!projectId && !prospectId) {
+            return res.status(400).json({ message: 'projectId or prospectId is required' });
+        }
+
+        let data = {
+            createdBy: { connect: { id: req.userId } },
+            name,
+            deadline: new Date(deadline), // Ensure ISO string from frontend
+            description,
+            link,
+        };
 
         if (projectId) {
             const project = await prisma.project.findUnique({ where: { id: parseInt(projectId) } });
             if (!project) return res.status(404).json({ message: 'Project not found' });
-
             if (project.is_done) {
                 return res.status(400).json({ message: 'Cannot add task to a completed project' });
             }
-            finalProspectId = project.prospectId;
-        } else if (prospectId) {
+            data.project = { connect: { id: project.id } };
+            data.prospect = { connect: { no_project: project.prospectId } };
+        } else {
             const prospect = await prisma.prospect.findUnique({ where: { no_project: prospectId } });
             if (!prospect) return res.status(404).json({ message: 'Prospect not found' });
-        } else {
-            return res.status(400).json({ message: 'projectId or prospectId is required' });
+            data.prospect = { connect: { no_project: prospectId } };
+
+            const project = await prisma.project.findUnique({ where: { prospectId } });
+            if (project) {
+                if (project.is_done) {
+                    return res.status(400).json({ message: 'Cannot add task to a completed project' });
+                }
+                data.project = { connect: { id: project.id } };
+            }
         }
 
-        const subtask = await prisma.subtask.create({
-            data: {
-                projectId: projectId ? parseInt(projectId) : null,
-                prospectId: finalProspectId,
-                name,
-                deadline: new Date(deadline), // Ensure ISO string from frontend
-                description,
-                link,
-                createdById: req.userId,
-            },
-        });
+        const subtask = await prisma.subtask.create({ data });
 
         res.status(201).json(subtask);
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Error creating subtask' });
+        console.error('Error creating subtask:', error);
+        res.status(500).json({ message: 'Error creating subtask: ' + String(error.message || error) });
     }
 };
 
