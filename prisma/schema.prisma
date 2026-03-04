@@ -21,10 +21,13 @@ model Role {
 model User {
   id            Int       @id @default(autoincrement())
   username      String    @unique
+  name          String?
+  email         String?   @unique
   password      String
   roleId        Int
   role          Role      @relation(fields: [roleId], references: [id])
   createdTasks  Subtask[] // Tasks created by this user
+  adminProjects Project[] @relation("ProjectAdmins") // Projects assigned to this admin
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -56,6 +59,7 @@ model Project {
   prospect      Prospect  @relation(fields: [prospectId], references: [no_project])
   is_done       Boolean   @default(false)
   subtasks      Subtask[]
+  admins        User[]    @relation("ProjectAdmins") // Admins assigned to this project
   order         Int       @default(0)
   link          String?   // Main project link
   createdAt     DateTime  @default(now())

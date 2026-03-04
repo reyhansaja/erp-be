@@ -16,10 +16,7 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 // Middleware
-app.use(cors({
-    origin: ['http://localhost:5173', 'https://erp.portorey.my.id'],
-    credentials: true
-}));
+app.use(cors());
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
@@ -33,10 +30,12 @@ app.get('/', (req, res) => {
 const authRoutes = require('./src/routes/auth.routes');
 const prospectRoutes = require('./src/routes/prospect.routes');
 const projectRoutes = require('./src/routes/project.routes');
+const userRoutes = require('./src/routes/user.routes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/prospects', prospectRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/users', userRoutes);
 
 const PORT = process.env.PORT || 5000;
 

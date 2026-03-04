@@ -11,6 +11,15 @@ const getProjects = async (req, res) => {
             where.is_done = is_done === 'true';
         }
 
+        // Restrict Admins to only see projects they are assigned to
+        if (req.roleName === 'Admin') {
+            where.admins = {
+                some: {
+                    id: req.userId
+                }
+            };
+        }
+
         if (search) {
             where.prospect = {
                 OR: [
@@ -26,6 +35,12 @@ const getProjects = async (req, res) => {
             include: {
                 prospect: true,
                 subtasks: true,
+                admins: {
+                    select: {
+                        id: true,
+                        username: true,
+                    }
+                }
             },
 
             orderBy: [{ order: 'asc' }, { createdAt: 'desc' }],
@@ -57,6 +72,12 @@ const getProjectById = async (req, res) => {
             where: { id: parseInt(id) },
             include: {
                 prospect: true,
+                admins: {
+                    select: {
+                        id: true,
+                        username: true
+                    }
+                },
                 subtasks: {
                     include: { createdBy: { select: { username: true } } },
                     orderBy: { deadline: 'asc' }
@@ -66,6 +87,14 @@ const getProjectById = async (req, res) => {
 
         if (!project) {
             return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // Authorization check
+        if (req.roleName === 'Admin') {
+            const isAssigned = project.admins.some(admin => admin.id === req.userId);
+            if (!isAssigned) {
+                return res.status(403).json({ message: 'Access denied. You are not assigned to this project.' });
+            }
         }
 
         // Calculate Progress
@@ -114,17 +143,31 @@ const reorderProjects = async (req, res) => {
 const updateProject = async (req, res) => {
     try {
         const { id } = req.params;
-        const { link, is_done } = req.body;
+        const { link, is_done, adminIds } = req.body;
 
         const project = await prisma.project.findUnique({ where: { id: parseInt(id) } });
         if (!project) return res.status(404).json({ message: 'Project not found' });
 
+        const dataToUpdate = {
+            link,
+            is_done: is_done !== undefined ? is_done : undefined
+        };
+
+        // If adminIds array is provided, update the relations
+        if (adminIds && Array.isArray(adminIds)) {
+            dataToUpdate.admins = {
+                set: adminIds.map(adminId => ({ id: adminId }))
+            };
+        }
+
         const updatedProject = await prisma.project.update({
             where: { id: parseInt(id) },
-            data: {
-                link,
-                is_done: is_done !== undefined ? is_done : undefined
-            },
+            data: dataToUpdate,
+            include: {
+                admins: {
+                    select: { id: true, username: true }
+                }
+            }
         });
 
         res.json(updatedProject);
