@@ -162,26 +162,40 @@ const deleteProspect = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Check if prospect has an associated project
-        const project = await prisma.project.findUnique({ where: { prospectId: id } });
+        await prisma.$transaction(async (tx) => {
+            // Check if prospect exists
+            const prospect = await tx.prospect.findUnique({
+                where: { no_project: id },
+                include: { project: true }
+            });
 
-        // Step 1: Delete all subtasks connected to this prospect directly
-        await prisma.subtask.deleteMany({ where: { prospectId: id } });
+            if (!prospect) {
+                const error = new Error('Prospect not found');
+                error.status = 404;
+                throw error;
+            }
 
-        if (project) {
-            // Step 2: Delete subtasks connected to the project
-            await prisma.subtask.deleteMany({ where: { projectId: project.id } });
+            // Step 1: Delete all subtasks connected to this prospect directly
+            await tx.subtask.deleteMany({ where: { prospectId: id } });
 
-            // Step 3: Delete the project
-            await prisma.project.delete({ where: { id: project.id } });
-        }
+            if (prospect.project) {
+                // Step 2: Delete subtasks connected to the project
+                await tx.subtask.deleteMany({ where: { projectId: prospect.project.id } });
 
-        // Step 4: Finally, delete the prospect
-        await prisma.prospect.delete({ where: { no_project: id } });
+                // Step 3: Delete the project
+                await tx.project.delete({ where: { id: prospect.project.id } });
+            }
+
+            // Step 4: Finally, delete the prospect
+            await tx.prospect.delete({ where: { no_project: id } });
+        });
 
         res.json({ message: 'Prospect deleted successfully' });
     } catch (error) {
         console.error("Error deleting prospect:", error);
+        if (error.status === 404) {
+            return res.status(404).json({ message: error.message });
+        }
         res.status(500).json({ message: 'Error deleting prospect: ' + String(error.message || error) });
     }
 };
